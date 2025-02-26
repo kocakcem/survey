@@ -6,8 +6,6 @@ import streamlit as st
 
 ###############################################################################
 # CSS Hack to hide the dummy "None" item from the dropdown/radio list
-# This approach uses nth-child selectors to hide the first item in each list.
-# Because we place None at index=0, that item is never visible to the user.
 ###############################################################################
 st.markdown("""
 <style>
@@ -15,7 +13,6 @@ st.markdown("""
 [data-baseweb="select"] li:nth-child(1) {
     display: none !important;
 }
-
 /* Hide the first (index=0) radio option */
 [data-baseweb="radio"] div[role="radio"]:nth-child(1) {
     display: none !important;
@@ -134,17 +131,15 @@ def survey_page():
     elif st.session_state.step == 1:
         st.subheader("B. Firmanızın borçlu olduğu işletme en çok hangi ölçektedir?")
 
-        # We'll have a selectbox with the first item = None (hidden).
-        # The rest are real choices.
+        # Updated: we add numbering 1., 2., 3., 4. to the valid options
         scale_choices = [
-            None,  # hidden by CSS, represents "no selection"
-            "Mikro ölçekli işletme (1-9 çalışan)",
-            "Küçük ölçekli işletme (10-49 çalışan)",
-            "Orta ölçekli işletme (50-250 çalışan)",
-            "Büyük ölçekli işletme (250 üzeri çalışan)"
+            None,  # hidden by CSS, "no selection" placeholder
+            "1. Mikro ölçekli işletme (1-9 çalışan)",
+            "2. Küçük ölçekli işletme (10-49 çalışan)",
+            "3. Orta ölçekli işletme (50-250 çalışan)",
+            "4. Büyük ölçekli işletme (250 üzeri çalışan)"
         ]
 
-        # Figure out which index to display
         if st.session_state.company_scale in scale_choices:
             current_index = scale_choices.index(st.session_state.company_scale)
         else:
@@ -155,7 +150,7 @@ def survey_page():
             scale_choices,
             index=current_index,
             key="company_scale_selectbox",
-            format_func=lambda x: x if x else ""  # Show blank for None
+            format_func=lambda x: x if x else ""
         )
 
         st.session_state.company_scale = selected
@@ -192,7 +187,7 @@ def survey_page():
             debt_choices,
             index=current_index,
             key="debt_amount_radio",
-            format_func=lambda x: x if x else ""  # blank for None
+            format_func=lambda x: x if x else ""
         )
         st.session_state.debt_amount = chosen
 
@@ -226,7 +221,7 @@ def survey_page():
             market_choices,
             index=current_index,
             key="market_served_selectbox",
-            format_func=lambda x: x if x else ""  # blank for None
+            format_func=lambda x: x if x else ""
         )
         st.session_state.market_served = selection
 
