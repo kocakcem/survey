@@ -38,10 +38,7 @@ def load_responses():
     conn.close()
     return df
 
-# --- HTML Template (with minimal changes) ---
-# The only changes made are:
-# 1. Changing the form tag to include an id and an onsubmit attribute.
-# 2. Appending a JavaScript function "handleSubmit" that gathers the form data and redirects with query parameters.
+# --- HTML Template (only change is the handleSubmit function) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -141,17 +138,22 @@ HTML_TEMPLATE = """
       updateProgress();
     }
 
-    // New function to capture form data and redirect with query parameters
+    // Only change: we now build the redirect URL from window.location.href
     function handleSubmit(e) {
       e.preventDefault();
       var year_debt = document.getElementById("year_debt_input").value;
       var company_scale = document.getElementById("select_company_scale").value;
       var debt_amount = document.getElementById("debt_amount_input").value;
       var market_served = document.getElementById("select_market_served").value;
-      var url = window.location.pathname + "?year_debt=" + encodeURIComponent(year_debt) +
-         "&company_scale=" + encodeURIComponent(company_scale) +
-         "&debt_amount=" + encodeURIComponent(debt_amount) +
-         "&market_served=" + encodeURIComponent(market_served);
+
+      // Remove any existing query string from the current URL:
+      var baseUrl = window.location.href.split('?')[0];
+      // Build the new URL with query parameters:
+      var url = baseUrl
+        + "?year_debt=" + encodeURIComponent(year_debt)
+        + "&company_scale=" + encodeURIComponent(company_scale)
+        + "&debt_amount=" + encodeURIComponent(debt_amount)
+        + "&market_served=" + encodeURIComponent(market_served);
       window.location.href = url;
     }
   </script>
@@ -162,7 +164,6 @@ HTML_TEMPLATE = """
   <div class="progress mb-4">
     <div class="progress-bar" role="progressbar" id="progressBar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">25%</div>
   </div>
-  <!-- Modified form tag: removed method="POST" and added id & onsubmit -->
   <form id="surveyForm" onsubmit="handleSubmit(event)">
     <!-- Question 1 -->
     <div id="question1" class="question-page">
@@ -264,11 +265,11 @@ HTML_TEMPLATE = """
 
 # --- Streamlit app logic ---
 
-# Use query parameters to decide which “page” to show.
-params = st.experimental_get_query_params()
+# Remove the old st.experimental_get_query_params usage:
+params_dict = st.query_params  # returns a dict of param -> list of strings
 
-# Admin download page: if URL contains ?page=download
-if "page" in params and params["page"][0] == "download":
+# If there's a ?page=download in the URL, show admin page
+if "page" in params_dict and "download" in params_dict["page"]:
     st.title("Download Survey Results")
     st.write("Bu sayfa yalnızca yetkili kullanıcılar içindir.")
     admin_username = st.text_input("Kullanıcı Adı")
@@ -291,23 +292,38 @@ if "page" in params and params["page"][0] == "download":
         else:
             st.error("Giriş başarısız, lütfen tekrar deneyin.")
 
+# Otherwise, it's the main survey page
 else:
-    # Check if survey data was submitted (via query parameters)
+    # So we don't re-save on every page load:
     if "submitted" not in st.session_state:
         st.session_state.submitted = False
 
-    if (not st.session_state.submitted) and all(k in params for k in ["year_debt", "company_scale", "debt_amount", "market_served"]):
-        # Get values from query params
-        year_debt = params["year_debt"][0]
-        company_scale = params["company_scale"][0]
-        debt_amount = params["debt_amount"][0]
-        market_served = params["market_served"][0]
+    # Extract each param (which is a list of strings). If missing, get an empty list.
+    year_debt_list = params_dict.get("year_debt", [])
+    company_scale_list = params_dict.get("company_scale", [])
+    debt_amount_list = params_dict.get("debt_amount", [])
+    market_served_list = params_dict.get("market_served", [])
+
+    # If all parameters are present and we haven't already submitted:
+    if (not st.session_state.submitted
+        and len(year_debt_list) > 0
+        and len(company_scale_list) > 0
+        and len(debt_amount_list) > 0
+        and len(market_served_list) > 0):
+        
+        # They are lists, so take the first item
+        year_debt = year_debt_list[0]
+        company_scale = company_scale_list[0]
+        debt_amount = debt_amount_list[0]
+        market_served = market_served_list[0]
+
         save_response(year_debt, company_scale, debt_amount, market_served)
         st.session_state.submitted = True
         st.success("Teşekkürler! Cevabınız kaydedildi.")
         st.markdown("[Ankete tekrar katılmak için tıklayın](./)")
+
     else:
-        # Display the survey form with your original design
+        # Show your custom HTML form
         components.html(HTML_TEMPLATE, height=800, scrolling=True)
-        # Optionally, add an admin link for downloading results:
+        # Optional link for admin
         st.markdown("[Download Results (Admin)](?page=download)")
