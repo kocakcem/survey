@@ -131,29 +131,44 @@ def survey_page():
     elif st.session_state.step == 1:
         st.subheader("B. Firmanızın borçlu olduğu işletme en çok hangi ölçektedir?")
 
-        # Updated: we add numbering 1., 2., 3., 4. to the valid options
-        scale_choices = [
+        # Two parallel lists:
+        # - scale_choices_display: with numbering for UI
+        # - scale_choices_internal: stored in session_state & DB
+        scale_choices_display = [
             None,  # hidden by CSS, "no selection" placeholder
             "1. Mikro ölçekli işletme (1-9 çalışan)",
             "2. Küçük ölçekli işletme (10-49 çalışan)",
             "3. Orta ölçekli işletme (50-250 çalışan)",
             "4. Büyük ölçekli işletme (250 üzeri çalışan)"
         ]
+        scale_choices_internal = [
+            None,
+            "Mikro ölçekli işletme (1-9 çalışan)",
+            "Küçük ölçekli işletme (10-49 çalışan)",
+            "Orta ölçekli işletme (50-250 çalışan)",
+            "Büyük ölçekli işletme (250 üzeri çalışan)"
+        ]
 
-        if st.session_state.company_scale in scale_choices:
-            current_index = scale_choices.index(st.session_state.company_scale)
+        # Determine which index is currently selected based on st.session_state.company_scale
+        if st.session_state.company_scale in scale_choices_internal:
+            current_index = scale_choices_internal.index(st.session_state.company_scale)
         else:
             current_index = 0  # no selection
 
-        selected = st.selectbox(
+        # Show the display list in the selectbox
+        selected_display = st.selectbox(
             "Seçiniz",
-            scale_choices,
+            scale_choices_display,
             index=current_index,
             key="company_scale_selectbox",
             format_func=lambda x: x if x else ""
         )
 
-        st.session_state.company_scale = selected
+        # Map the selected display item -> internal item
+        # so we only store the unnumbered text in session_state
+        index_chosen = scale_choices_display.index(selected_display)
+        internal_value = scale_choices_internal[index_chosen]
+        st.session_state.company_scale = internal_value
 
         col_back, col_next = st.columns(2)
         if col_back.button("Geri", key="step1_back"):
