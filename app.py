@@ -4,9 +4,9 @@ import pandas as pd
 from io import BytesIO
 import streamlit as st
 
-# ---------------------------------
+# ------------------------------------
 # Database Setup
-# ---------------------------------
+# ------------------------------------
 DATABASE = "survey.db"
 
 def init_db():
@@ -26,25 +26,25 @@ def init_db():
 
 init_db()
 
-# ---------------------------------
+# ------------------------------------
 # Session State Defaults
-# ---------------------------------
+# ------------------------------------
 if "step" not in st.session_state:
-    st.session_state.step = 0  # from 0..3, then 4 = "submitted"
+    st.session_state.step = 0  # 0..3, then 4 = "submitted"
 
-# Answers stored in session state so we don’t lose them:
+# For each question, store the user's choice. Empty string = no choice yet.
 if "year_debt" not in st.session_state:
-    st.session_state.year_debt = ""  # no choice
+    st.session_state.year_debt = ""
 if "company_scale" not in st.session_state:
-    st.session_state.company_scale = ""  # no choice
+    st.session_state.company_scale = ""
 if "debt_amount" not in st.session_state:
-    st.session_state.debt_amount = ""  # no choice
+    st.session_state.debt_amount = ""
 if "market_served" not in st.session_state:
-    st.session_state.market_served = ""  # no choice
+    st.session_state.market_served = ""
 
-# ---------------------------------
-# Save Response
-# ---------------------------------
+# ------------------------------------
+# Save Response to DB
+# ------------------------------------
 def save_response():
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
@@ -60,26 +60,25 @@ def save_response():
     conn.commit()
     conn.close()
 
-# ---------------------------------
-# Survey Pages
-# ---------------------------------
+# ------------------------------------
+# The Survey
+# ------------------------------------
 def survey_page():
     st.title("Şirket Borç Durumu Anketi")
 
-    # Progress bar: step=0..4 => 0%, 25%, 50%, 75%, 100%
+    # --- Progress Bar ---
+    # step=0..4 => 0%, 25%, 50%, 75%, 100%
     progress_val = int((st.session_state.step / 4) * 100)
     st.progress(progress_val)
     st.write(f"{progress_val}% tamamlandı")
 
-    # ============= STEP 0 =============
+    # ============= STEP 0: Year of Highest Debt =============
     if st.session_state.step == 0:
         st.subheader("A. Firmanızın en çok borçlandığı yıl hangisidir?")
-        st.write("Aşağıdaki düğmelerden birini tıklayın:")
 
-        # Show 6 buttons in two rows. Once user clicks a button, we store that choice in session_state.year_debt.
-        # That automatically re-runs the script, enabling the "Devam" button in the next render.
-        row1 = st.columns(3)
-        year_options = [
+        # We'll use a radio with a "Lütfen Seçiniz" placeholder
+        # so there's no valid selection by default.
+        options = [
             "2000 ve öncesi",
             "2001-2005 arası",
             "2006-2010 arası",
@@ -87,85 +86,75 @@ def survey_page():
             "2016-2020 arası",
             "2020-2024 arası"
         ]
-        for i, option in enumerate(year_options[:3]):
-            if row1[i].button(option, key=f"year_btn_{i}"):
-                st.session_state.year_debt = option
+        # Build the radio with an extra placeholder at the top:
+        radio_options = ["Lütfen Seçiniz"] + options
 
-        row2 = st.columns(3)
-        for i, option in enumerate(year_options[3:], start=3):
-            if row2[i-3].button(option, key=f"year_btn_{i}"):
-                st.session_state.year_debt = option
-
-        # Show the user's choice (if any)
-        if st.session_state.year_debt:
-            st.success(f"Seçtiğiniz: {st.session_state.year_debt}")
+        # Figure out which index to show as selected:
+        if st.session_state.year_debt in options:
+            # previously chosen a valid item
+            default_index = options.index(st.session_state.year_debt) + 1
         else:
-            st.info("Henüz bir yıl seçmediniz.")
+            # no choice yet
+            default_index = 0
 
-        # "Devam" is disabled unless a choice has been made
+        chosen = st.radio(
+            "Seçiniz:",
+            radio_options,
+            index=default_index,
+            key="year_debt_radio"
+        )
+
+        # If user picks the placeholder, interpret as no valid choice
+        if chosen == "Lütfen Seçiniz":
+            st.session_state.year_debt = ""
+        else:
+            st.session_state.year_debt = chosen
+
+        # "Devam" is disabled if there's no valid choice
         if st.button("Devam", disabled=(st.session_state.year_debt == ""), key="next0"):
             st.session_state.step = 1
 
-    # ============= STEP 1 =============
+    # ============= STEP 1: Company Scale =============
     elif st.session_state.step == 1:
         st.subheader("B. Firmanızın borçlu olduğu işletme en çok hangi ölçektedir?")
-        # We'll do 4 radio buttons. The user must pick exactly one. If none is chosen, radio returns None.
-        # If we want to preserve the old choice, set the 'index' accordingly or handle it manually.
-        # But radio doesn't have a disabled option, so let's do a small hack:
-        company_options = [
+
+        options = [
             "Mikro ölçekli işletme (1-9 çalışan)",
             "Küçük ölçekli işletme (10-49 çalışan)",
             "Orta ölçekli işletme (50-250 çalışan)",
             "Büyük ölçekli işletme (250 üzeri çalışan)"
         ]
+        radio_options = ["Lütfen Seçiniz"] + options
 
-        # If st.session_state.company_scale is in the list, find its index. Otherwise None => no selection.
-        if st.session_state.company_scale in company_options:
-            default_index = company_options.index(st.session_state.company_scale)
+        if st.session_state.company_scale in options:
+            default_index = options.index(st.session_state.company_scale) + 1
         else:
-            default_index = -1  # means "no selection yet"
+            default_index = 0
 
-        # Build a radio widget with an extra "Seçiniz" label if default_index is -1
-        # but we want to visually show no selection at first. We can do:
-        chosen_scale = st.radio(
+        chosen = st.radio(
             "Seçiniz:",
-            options=company_options,
-            index=default_index if default_index >= 0 else 0,
-            key="company_scale_radio"
-        ) if default_index >= 0 else st.radio(
-            "Seçiniz:",
-            options=company_options,
-            index=0,
+            radio_options,
+            index=default_index,
             key="company_scale_radio"
         )
 
-        # If default_index was -1, we forced index=0, which picks the first option. 
-        # But we don't want that auto-chosen. So let's do a quick check:
-        # We'll only update st.session_state.company_scale if the user changed it (Streamlit re-run).
-        # We'll compare chosen_scale to the old value.
-        if chosen_scale != st.session_state.company_scale:
-            # That means the user just changed the radio selection
-            st.session_state.company_scale = chosen_scale
-
-        # If user hasn't changed from the default at all, we can interpret that as "no valid selection."
-        # But radio doesn't easily let you have "no selection." We'll do a check:
-        # If the user truly wants no selection yet, they'd have to forcibly do something. 
-        # For a single-click approach, let's store the "initial" as empty. 
-        # We'll do a small workaround below.
+        if chosen == "Lütfen Seçiniz":
+            st.session_state.company_scale = ""
+        else:
+            st.session_state.company_scale = chosen
 
         col_back, col_next = st.columns(2)
         if col_back.button("Geri", key="back1"):
             st.session_state.step = 0
 
-        # If the user didn't actually pick anything new, we treat it as empty:
-        valid_choice = (st.session_state.company_scale in company_options)
-        if col_next.button("Devam", disabled=(not valid_choice), key="next1"):
+        if col_next.button("Devam", disabled=(st.session_state.company_scale == ""), key="next1"):
             st.session_state.step = 2
 
-    # ============= STEP 2 =============
+    # ============= STEP 2: Debt Amount =============
     elif st.session_state.step == 2:
         st.subheader("C. Firmanızın borç oranı nedir?")
-        debt_options = [
+
+        options = [
             "0-1 milyon TL",
             "1-5 milyon TL",
             "5-10 milyon TL",
@@ -173,73 +162,67 @@ def survey_page():
             "50 milyon TL ve üzeri",
             "Belirtmek istemiyorum"
         ]
+        radio_options = ["Lütfen Seçiniz"] + options
 
-        if st.session_state.debt_amount in debt_options:
-            default_index = debt_options.index(st.session_state.debt_amount)
+        if st.session_state.debt_amount in options:
+            default_index = options.index(st.session_state.debt_amount) + 1
         else:
-            default_index = -1
+            default_index = 0
 
-        # Similar approach
-        chosen_debt = st.radio(
+        chosen = st.radio(
             "Seçiniz:",
-            debt_options,
-            index=default_index if default_index >= 0 else 0,
-            key="debt_amount_radio"
-        ) if default_index >= 0 else st.radio(
-            "Seçiniz:",
-            debt_options,
-            index=0,
+            radio_options,
+            index=default_index,
             key="debt_amount_radio"
         )
 
-        if chosen_debt != st.session_state.debt_amount:
-            st.session_state.debt_amount = chosen_debt
+        if chosen == "Lütfen Seçiniz":
+            st.session_state.debt_amount = ""
+        else:
+            st.session_state.debt_amount = chosen
 
         col_back, col_next = st.columns(2)
         if col_back.button("Geri", key="back2"):
             st.session_state.step = 1
 
-        valid_choice = (st.session_state.debt_amount in debt_options)
-        if col_next.button("Devam", disabled=(not valid_choice), key="next2"):
+        if col_next.button("Devam", disabled=(st.session_state.debt_amount == ""), key="next2"):
             st.session_state.step = 3
 
-    # ============= STEP 3 =============
+    # ============= STEP 3: Market Served =============
     elif st.session_state.step == 3:
         st.subheader("D. Firmanız ağırlıklı olarak hangi pazarlara hizmet veriyor?")
-        market_options = [
+
+        options = [
             "Sadece yurtiçi pazara hizmet veriyorum",
             "Ağırlıklı olarak yurtiçi pazara, kısmen yurtdışı pazara hizmet veriyorum",
             "Hem yurtiçi hem yurtdışı pazarlara eşit oranda hizmet veriyorum",
             "Ağırlıklı olarak yurtdışı pazara, kısmen yurtiçi pazara hizmet veriyorum",
             "Sadece yurtdışı pazara hizmet veriyorum"
         ]
+        radio_options = ["Lütfen Seçiniz"] + options
 
-        if st.session_state.market_served in market_options:
-            default_index = market_options.index(st.session_state.market_served)
+        if st.session_state.market_served in options:
+            default_index = options.index(st.session_state.market_served) + 1
         else:
-            default_index = -1
+            default_index = 0
 
-        chosen_market = st.radio(
+        chosen = st.radio(
             "Seçiniz:",
-            market_options,
-            index=default_index if default_index >= 0 else 0,
-            key="market_served_radio"
-        ) if default_index >= 0 else st.radio(
-            "Seçiniz:",
-            market_options,
-            index=0,
+            radio_options,
+            index=default_index,
             key="market_served_radio"
         )
 
-        if chosen_market != st.session_state.market_served:
-            st.session_state.market_served = chosen_market
+        if chosen == "Lütfen Seçiniz":
+            st.session_state.market_served = ""
+        else:
+            st.session_state.market_served = chosen
 
         col_back, col_submit = st.columns(2)
         if col_back.button("Geri", key="back3"):
             st.session_state.step = 2
 
-        valid_choice = (st.session_state.market_served in market_options)
-        if col_submit.button("Gönder", disabled=(not valid_choice), key="submit_btn"):
+        if col_submit.button("Gönder", disabled=(st.session_state.market_served == ""), key="submit_btn"):
             save_response()
             st.session_state.step = 4
 
@@ -261,15 +244,16 @@ def survey_page():
             st.session_state.debt_amount = ""
             st.session_state.market_served = ""
 
-# ---------------------------------
+# ------------------------------------
 # Download Page
-# ---------------------------------
+# ------------------------------------
 def download_page():
     st.title("Anket Sonuçlarını İndir")
     st.write("Lütfen yetkilendirme bilgilerinizi giriniz.")
 
     username = st.text_input("Kullanıcı Adı", key="username")
     password = st.text_input("Parola", type="password", key="password")
+
     admin_username = os.environ.get("ADMIN_USERNAME", "user.vision")
     admin_password = os.environ.get("ADMIN_PASSWORD", "cemisthe.bestfreelancer.ever")
 
@@ -298,11 +282,12 @@ def download_page():
         else:
             st.error("Geçersiz kullanıcı adı veya parola.")
 
-# ---------------------------------
+# ------------------------------------
 # Main App
-# ---------------------------------
+# ------------------------------------
 st.sidebar.title("Navigasyon")
 page = st.sidebar.radio("Seçiniz", ("Anket", "Sonuçları İndir"))
+
 if page == "Anket":
     survey_page()
 else:
