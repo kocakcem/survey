@@ -135,7 +135,7 @@ def survey_page():
         # - scale_choices_display: with numbering for UI
         # - scale_choices_internal: stored in session_state & DB
         scale_choices_display = [
-            None,  # hidden by CSS, "no selection" placeholder
+            None,
             "1. Mikro ölçekli işletme (1-9 çalışan)",
             "2. Küçük ölçekli işletme (10-49 çalışan)",
             "3. Orta ölçekli işletme (50-250 çalışan)",
@@ -149,13 +149,11 @@ def survey_page():
             "Büyük ölçekli işletme (250 üzeri çalışan)"
         ]
 
-        # Determine which index is currently selected based on st.session_state.company_scale
         if st.session_state.company_scale in scale_choices_internal:
             current_index = scale_choices_internal.index(st.session_state.company_scale)
         else:
             current_index = 0  # no selection
 
-        # Show the display list in the selectbox
         selected_display = st.selectbox(
             "Seçiniz",
             scale_choices_display,
@@ -165,7 +163,6 @@ def survey_page():
         )
 
         # Map the selected display item -> internal item
-        # so we only store the unnumbered text in session_state
         index_chosen = scale_choices_display.index(selected_display)
         internal_value = scale_choices_internal[index_chosen]
         st.session_state.company_scale = internal_value
@@ -183,7 +180,7 @@ def survey_page():
         st.subheader("C. Firmanızın borç oranı nedir?")
 
         debt_choices = [
-            None,  # hidden by CSS
+            None,
             "0-1 milyon TL",
             "1-5 milyon TL",
             "5-10 milyon TL",
@@ -218,7 +215,7 @@ def survey_page():
         st.subheader("D. Firmanız ağırlıklı olarak hangi pazarlara hizmet veriyor?")
 
         market_choices = [
-            None,  # hidden by CSS
+            None,
             "Sadece yurtiçi pazara hizmet veriyorum",
             "Ağırlıklı olarak yurtiçi pazara, kısmen yurtdışı pazara hizmet veriyorum",
             "Hem yurtiçi hem yurtdışı pazarlara eşit oranda hizmet veriyorum",
@@ -283,8 +280,24 @@ def download_page():
         if username == admin_username and password == admin_password:
             st.success("Giriş başarılı!")
             conn = sqlite3.connect(DATABASE)
-            df = pd.read_sql_query("SELECT * FROM responses", conn)
+            # We can select columns by name, ignoring 'id' if desired:
+            df = pd.read_sql_query("""
+                SELECT 
+                    year_debt, 
+                    company_scale, 
+                    debt_amount, 
+                    market_served
+                FROM responses
+            """, conn)
             conn.close()
+
+            # Rename columns to match the question text:
+            df.rename(columns={
+                "year_debt": "Firmanızın en çok borçlandığı yıl hangisidir?",
+                "company_scale": "Firmanızın borçlu olduğu işletme en çok hangi ölçektedir?",
+                "debt_amount": "Firmanızın borç oranı nedir?",
+                "market_served": "Firmanız ağırlıklı olarak hangi pazarlara hizmet veriyor?"
+            }, inplace=True)
 
             st.write("Kayıtlı cevaplar:")
             st.dataframe(df)
