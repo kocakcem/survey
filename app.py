@@ -1,12 +1,12 @@
-import streamlit as st
-import streamlit.components.v1 as components
+import os
 import sqlite3
 import pandas as pd
 from io import BytesIO
+import streamlit as st
 
-# ============================
-#      DATABASE SETUP
-# ============================
+# -------------------------------
+# Database Setup
+# -------------------------------
 DATABASE = "survey.db"
 
 def init_db():
@@ -26,340 +26,202 @@ def init_db():
 
 init_db()
 
-def save_response(year_debt, company_scale, debt_amount, market_served):
+# -------------------------------
+# Session State Initialization
+# -------------------------------
+if 'step' not in st.session_state:
+    st.session_state.step = 0  # survey page: 0 to 3; 4 = submitted
+if 'year_debt' not in st.session_state:
+    st.session_state.year_debt = ""
+if 'company_scale' not in st.session_state:
+    st.session_state.company_scale = ""
+if 'debt_amount' not in st.session_state:
+    st.session_state.debt_amount = ""
+if 'market_served' not in st.session_state:
+    st.session_state.market_served = ""
+
+# -------------------------------
+# Helper: Write response to DB
+# -------------------------------
+def save_response():
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
-    c.execute("INSERT INTO responses (year_debt, company_scale, debt_amount, market_served) VALUES (?, ?, ?, ?)",
-              (year_debt, company_scale, debt_amount, market_served))
+    c.execute(
+        "INSERT INTO responses (year_debt, company_scale, debt_amount, market_served) VALUES (?, ?, ?, ?)",
+        (st.session_state.year_debt, st.session_state.company_scale, st.session_state.debt_amount, st.session_state.market_served)
+    )
     conn.commit()
     conn.close()
 
-def load_responses():
-    conn = sqlite3.connect(DATABASE)
-    df = pd.read_sql_query("SELECT * FROM responses", conn)
-    conn.close()
-    return df
+# -------------------------------
+# Survey Pages
+# -------------------------------
+def survey_page():
+    st.title("Şirket Borç Durumu Anketi")
+    
+    # Progress bar (4 questions)
+    progress = int(((st.session_state.step + 1) / 4) * 100) if st.session_state.step < 4 else 100
+    st.progress(progress)
+    st.write(f"{progress}% tamamlandı")
+    
+    # QUESTION 1: Year Debt
+    if st.session_state.step == 0:
+        st.subheader("A. Firmanızın en çok borçlandığı yıl hangisidir?")
+        st.write("Aşağıdaki seçeneklerden birini tıklayın:")
+        
+        # Arrange buttons in two rows using columns
+        options = ["2000 ve öncesi", "2001-2005 arası", "2006-2010 arası", 
+                   "2011-2015 arası", "2016-2020 arası", "2020-2024 arası"]
+        
+        # First row (3 options)
+        cols = st.columns(3)
+        for i in range(3):
+            if cols[i].button(options[i]):
+                st.session_state.year_debt = options[i]
+        # Second row (3 options)
+        cols = st.columns(3)
+        for i in range(3,6):
+            if cols[i-3].button(options[i]):
+                st.session_state.year_debt = options[i]
+                
+        if st.session_state.year_debt:
+            st.success(f"Seçtiğiniz: {st.session_state.year_debt}")
+            if st.button("Devam"):
+                st.session_state.step += 1
+        else:
+            st.info("Lütfen bir seçenek belirleyiniz.")
+            
+    # QUESTION 2: Company Scale
+    elif st.session_state.step == 1:
+        st.subheader("B. Firmanızın borçlu olduğu işletme en çok hangi ölçektedir?")
+        options = [
+            "Mikro ölçekli işletme (1-9 çalışan)",
+            "Küçük ölçekli işletme (10-49 çalışan)",
+            "Orta ölçekli işletme (50-250 çalışan)",
+            "Büyük ölçekli işletme (250 üzeri çalışan)"
+        ]
+        selection = st.selectbox("Seçiniz", [""] + options, index=0)
+        if selection != "":
+            st.session_state.company_scale = selection
+        if st.session_state.company_scale:
+            st.success(f"Seçtiğiniz: {st.session_state.company_scale}")
+        col1, col2 = st.columns(2)
+        if col1.button("Geri"):
+            st.session_state.step -= 1
+        if col2.button("Devam") and st.session_state.company_scale:
+            st.session_state.step += 1
+        elif col2.button("Devam") and not st.session_state.company_scale:
+            st.error("Lütfen bir seçenek belirleyin.")
+            
+    # QUESTION 3: Debt Amount (radio buttons)
+    elif st.session_state.step == 2:
+        st.subheader("C. Firmanızın borç oranı nedir?")
+        options = [
+            "0-1 milyon TL",
+            "1-5 milyon TL",
+            "5-10 milyon TL",
+            "10-50 milyon TL",
+            "50 milyon TL ve üzeri",
+            "Belirtmek istemiyorum"
+        ]
+        selection = st.radio("Seçiniz", options, index=0)
+        if selection:
+            st.session_state.debt_amount = selection
+            st.success(f"Seçtiğiniz: {st.session_state.debt_amount}")
+        col1, col2 = st.columns(2)
+        if col1.button("Geri"):
+            st.session_state.step -= 1
+        if col2.button("Devam"):
+            st.session_state.step += 1
 
-# ============================
-#   YOUR "TEŞEKKÜRLER" PAGE
-# ============================
-THANKS_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Teşekkürler</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-  <style>
-    body { background-color: #f8f9fa; }
-  </style>
-</head>
-<body>
-  <div class="container mt-5">
-    <div class="card text-center shadow-sm">
-      <div class="card-body">
-        <h2 class="card-title text-success">Teşekkürler!</h2>
-        <p class="card-text">Cevabınız kaydedildi.</p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-"""
+    # QUESTION 4: Market Served
+    elif st.session_state.step == 3:
+        st.subheader("D. Firmanız ağırlıklı olarak hangi pazarlara hizmet veriyor?")
+        options = [
+            "Sadece yurtiçi pazara hizmet veriyorum",
+            "Ağırlıklı olarak yurtiçi pazara, kısmen yurtdışı pazara hizmet veriyorum",
+            "Hem yurtiçi hem yurtdışı pazarlara eşit oranda hizmet veriyorum",
+            "Ağırlıklı olarak yurtdışı pazara, kısmen yurtiçi pazara hizmet veriyorum",
+            "Sadece yurtdışı pazara hizmet veriyorum"
+        ]
+        selection = st.selectbox("Seçiniz", [""] + options, index=0)
+        if selection != "":
+            st.session_state.market_served = selection
+        if st.session_state.market_served:
+            st.success(f"Seçtiğiniz: {st.session_state.market_served}")
+        col1, col2 = st.columns(2)
+        if col1.button("Geri"):
+            st.session_state.step -= 1
+        if col2.button("Gönder"):
+            if st.session_state.market_served:
+                save_response()
+                st.session_state.step = 4  # mark as submitted
+            else:
+                st.error("Lütfen bir seçenek belirleyin.")
+    
+    # Submission Complete
+    elif st.session_state.step == 4:
+        st.markdown(
+            """
+            <div style="text-align: center; margin-top: 50px;">
+                <h2 style="color: green;">Teşekkürler!</h2>
+                <p>Cevabınız kaydedildi.</p>
+            </div>
+            """, unsafe_allow_html=True
+        )
+        if st.button("Yeni Anket Doldurmak İçin Başla"):
+            # Reset survey state to start over
+            st.session_state.step = 0
+            st.session_state.year_debt = ""
+            st.session_state.company_scale = ""
+            st.session_state.debt_amount = ""
+            st.session_state.market_served = ""
 
-# ============================
-#   YOUR MULTI-STEP SURVEY
-# ============================
-# The only real change is in `handleSubmit()` which appends the answers to the URL
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Anket</title>
-  <!-- Bootstrap CSS -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-  <style>
-    .question-page { display: none; }
-    .custom-radio {
-      -webkit-appearance: none;
-      -moz-appearance: none;
-      appearance: none;
-      width: 20px;
-      height: 20px;
-      border: 1px solid #adb5bd;
-      border-radius: 0;
-      outline: none;
-      cursor: pointer;
-      margin-right: 10px;
-      position: relative;
-    }
-    .custom-radio:checked {
-      background-color: #0d6efd;
-      border-color: #0d6efd;
-    }
-  </style>
-  <script>
-    var currentQuestion = 0;
-    var questions = ["question1", "question2", "question3", "question4"];
-    function showQuestion(index) {
-      questions.forEach(function(id, i) {
-        document.getElementById(id).style.display = (i === index ? "block" : "none");
-      });
-      updateProgress();
-    }
-    function updateProgress() {
-      var progress = ((currentQuestion + 1) / questions.length) * 100;
-      document.getElementById("progressBar").style.width = progress + "%";
-      document.getElementById("progressBar").innerText = Math.round(progress) + "%";
-    }
-    function enableButton(buttonId) {
-      var btn = document.getElementById(buttonId);
-      btn.disabled = false;
-      btn.classList.remove("btn-secondary");
-      btn.classList.add("btn-primary");
-    }
-    function disableButton(buttonId) {
-      var btn = document.getElementById(buttonId);
-      btn.disabled = true;
-      btn.classList.remove("btn-primary");
-      btn.classList.add("btn-secondary");
-    }
-    function selectYear(value) {
-      document.getElementById("year_debt_input").value = value;
-      var buttons = document.getElementsByClassName("year-button");
-      for (var i = 0; i < buttons.length; i++){
-        buttons[i].classList.remove("btn-primary");
-        buttons[i].classList.add("btn-outline-primary");
-      }
-      document.getElementById(value).classList.remove("btn-outline-primary");
-      document.getElementById(value).classList.add("btn-primary");
-      enableButton("next1");
-    }
-    function selectDebtAmountRadio(radio) {
-      document.getElementById("debt_amount_input").value = radio.value;
-      enableButton("next3");
-    }
-    function validateSelect(selectId, buttonId) {
-      var selectElement = document.getElementById(selectId);
-      if (selectElement.value !== "") {
-        enableButton(buttonId);
-      } else {
-        disableButton(buttonId);
-      }
-    }
-    function nextQuestion() {
-      if (currentQuestion < questions.length - 1) {
-        currentQuestion++;
-        showQuestion(currentQuestion);
-      }
-    }
-    function prevQuestion() {
-      if (currentQuestion > 0) {
-        currentQuestion--;
-        showQuestion(currentQuestion);
-      }
-    }
-    window.onload = function() {
-      showQuestion(0);
-      disableButton("next1");
-      disableButton("next2");
-      disableButton("next3");
-      disableButton("submitButton");
-      updateProgress();
-    }
-
-    // The submission function: build the new URL with query params, then redirect
-    function handleSubmit(e) {
-      e.preventDefault();
-      var year_debt = document.getElementById("year_debt_input").value;
-      var company_scale = document.getElementById("select_company_scale").value;
-      var debt_amount = document.getElementById("debt_amount_input").value;
-      var market_served = document.getElementById("select_market_served").value;
-
-      // Remove old query strings from the current URL
-      var baseUrl = window.location.href.split('?')[0];
-      // Build new URL with answers
-      var url = baseUrl
-        + "?year_debt=" + encodeURIComponent(year_debt)
-        + "&company_scale=" + encodeURIComponent(company_scale)
-        + "&debt_amount=" + encodeURIComponent(debt_amount)
-        + "&market_served=" + encodeURIComponent(market_served);
-
-      window.location.href = url;
-    }
-  </script>
-</head>
-<body class="container mt-5">
-  <h2 class="mb-4">Şirket Borç Durumu Anketi</h2>
-  <!-- Progress Bar -->
-  <div class="progress mb-4">
-    <div class="progress-bar" role="progressbar" id="progressBar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">25%</div>
-  </div>
-  <form id="surveyForm" onsubmit="handleSubmit(event)">
-    <!-- Question 1 -->
-    <div id="question1" class="question-page">
-      <div class="mb-3">
-        <label class="form-label"><b>A. Firmanızın en çok borçlandığı yıl hangisidir?</b></label>
-        <div class="d-grid gap-2">
-          <input type="hidden" name="year_debt" id="year_debt_input" required>
-          <button type="button" id="2000 ve öncesi" class="btn btn-outline-primary year-button" onclick="selectYear('2000 ve öncesi')">2000 ve öncesi</button>
-          <button type="button" id="2001-2005 arası" class="btn btn-outline-primary year-button" onclick="selectYear('2001-2005 arası')">2001-2005 arası</button>
-          <button type="button" id="2006-2010 arası" class="btn btn-outline-primary year-button" onclick="selectYear('2006-2010 arası')">2006-2010 arası</button>
-          <button type="button" id="2011-2015 arası" class="btn btn-outline-primary year-button" onclick="selectYear('2011-2015 arası')">2011-2015 arası</button>
-          <button type="button" id="2016-2020 arası" class="btn btn-outline-primary year-button" onclick="selectYear('2016-2020 arası')">2016-2020 arası</button>
-          <button type="button" id="2020-2024 arası" class="btn btn-outline-primary year-button" onclick="selectYear('2020-2024 arası')">2020-2024 arası</button>
-        </div>
-      </div>
-      <div class="d-flex justify-content-end">
-        <button type="button" id="next1" class="btn btn-secondary" onclick="nextQuestion()" disabled>Devam</button>
-      </div>
-    </div>
-
-    <!-- Question 2 -->
-    <div id="question2" class="question-page">
-      <div class="mb-3">
-        <label class="form-label"><b>B. Firmanızın borçlu olduğu işletme en çok hangi ölçektedir?</b></label>
-        <select name="company_scale" id="select_company_scale" class="form-select" onchange="validateSelect('select_company_scale', 'next2')" required>
-          <option value="">Seçiniz</option>
-          <option value="Mikro ölçekli işletme (1-9 çalışan)">Mikro ölçekli işletme (1-9 çalışan)</option>
-          <option value="Küçük ölçekli işletme (10-49 çalışan)">Küçük ölçekli işletme (10-49 çalışan)</option>
-          <option value="Orta ölçekli işletme (50-250 çalışan)">Orta ölçekli işletme (50-250 çalışan)</option>
-          <option value="Büyük ölçekli işletme (250 üzeri çalışan)">Büyük ölçekli işletme (250 üzeri çalışan)</option>
-        </select>
-      </div>
-      <div class="d-flex justify-content-between">
-        <button type="button" class="btn btn-primary" onclick="prevQuestion()">Geri</button>
-        <button type="button" id="next2" class="btn btn-secondary" onclick="nextQuestion()" disabled>Devam</button>
-      </div>
-    </div>
-
-    <!-- Question 3 -->
-    <div id="question3" class="question-page">
-      <div class="mb-3">
-        <label class="form-label"><b>C. Firmanızın borç oranı nedir?</b></label>
-        <input type="hidden" name="debt_amount" id="debt_amount_input" required>
-        <div>
-          <div class="form-check mb-2">
-            <input class="form-check-input custom-radio" type="radio" name="debt_amount_radio" id="option1" value="0-1 milyon TL" onclick="selectDebtAmountRadio(this)">
-            <label class="form-check-label" for="option1">0-1 milyon TL</label>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input custom-radio" type="radio" name="debt_amount_radio" id="option2" value="1-5 milyon TL" onclick="selectDebtAmountRadio(this)">
-            <label class="form-check-label" for="option2">1-5 milyon TL</label>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input custom-radio" type="radio" name="debt_amount_radio" id="option3" value="5-10 milyon TL" onclick="selectDebtAmountRadio(this)">
-            <label class="form-check-label" for="option3">5-10 milyon TL</label>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input custom-radio" type="radio" name="debt_amount_radio" id="option4" value="10-50 milyon TL" onclick="selectDebtAmountRadio(this)">
-            <label class="form-check-label" for="option4">10-50 milyon TL</label>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input custom-radio" type="radio" name="debt_amount_radio" id="option5" value="50 milyon TL ve üzeri" onclick="selectDebtAmountRadio(this)">
-            <label class="form-check-label" for="option5">50 milyon TL ve üzeri</label>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input custom-radio" type="radio" name="debt_amount_radio" id="option6" value="Belirtmek istemiyorum" onclick="selectDebtAmountRadio(this)">
-            <label class="form-check-label" for="option6">Belirtmek istemiyorum</label>
-          </div>
-        </div>
-      </div>
-      <div class="d-flex justify-content-between">
-        <button type="button" class="btn btn-primary" onclick="prevQuestion()">Geri</button>
-        <button type="button" id="next3" class="btn btn-secondary" onclick="nextQuestion()" disabled>Devam</button>
-      </div>
-    </div>
-
-    <!-- Question 4 -->
-    <div id="question4" class="question-page">
-      <div class="mb-3">
-        <label class="form-label"><b>D. Firmanız ağırlıklı olarak hangi pazarlara hizmet veriyor?</b></label>
-        <select name="market_served" id="select_market_served" class="form-select" onchange="validateSelect('select_market_served', 'submitButton')" required>
-          <option value="" disabled selected hidden></option>
-          <option value="Sadece yurtiçi pazara hizmet veriyorum">1. Sadece yurtiçi pazara hizmet veriyorum</option>
-          <option value="Ağırlıklı olarak yurtiçi pazara, kısmen yurtdışı pazara hizmet veriyorum">2. Ağırlıklı olarak yurtiçi pazara, kısmen yurtdışı pazara hizmet veriyorum</option>
-          <option value="Hem yurtiçi hem yurtdışı pazarlara eşit oranda hizmet veriyorum">3. Hem yurtiçi hem yurtdışı pazarlara eşit oranda hizmet veriyorum</option>
-          <option value="Ağırlıklı olarak yurtdışı pazara, kısmen yurtiçi pazara hizmet veriyorum">4. Ağırlıklı olarak yurtdışı pazara, kısmen yurtiçi pazara hizmet veriyorum</option>
-          <option value="Sadece yurtdışı pazara hizmet veriyorum">5. Sadece yurtdışı pazara hizmet veriyorum</option>
-        </select>
-      </div>
-      <div class="d-flex justify-content-between">
-        <button type="button" class="btn btn-primary" onclick="prevQuestion()">Geri</button>
-        <button type="submit" id="submitButton" class="btn btn-secondary" disabled>Gönder</button>
-      </div>
-    </div>
-  </form>
-</body>
-</html>
-"""
-
-# ============== STREAMLIT APP ==============
-
-params_dict = st.query_params
-
-# Admin page?  =>  http://.../?page=download
-if "page" in params_dict and "download" in params_dict["page"]:
-    st.title("Download Survey Results")
-    st.write("Bu sayfa yalnızca yetkili kullanıcılar içindir.")
-    admin_username = st.text_input("Kullanıcı Adı")
-    admin_password = st.text_input("Şifre", type="password")
+# -------------------------------
+# Download Responses Page (with basic auth)
+# -------------------------------
+def download_page():
+    st.title("Anket Sonuçlarını İndir")
+    st.write("Lütfen yetkilendirme bilgilerinizi giriniz.")
+    username = st.text_input("Kullanıcı Adı")
+    password = st.text_input("Parola", type="password")
+    
+    admin_username = os.environ.get("ADMIN_USERNAME", "user.vision")
+    admin_password = os.environ.get("ADMIN_PASSWORD", "cemisthe.bestfreelancer.ever")
+    
     if st.button("Giriş Yap"):
-        if admin_username == "user.vision" and admin_password == "cemisthe.bestfreelancer.ever":
-            df = load_responses()
-            st.subheader("Kayıtlı Yanıtlar")
+        if username == admin_username and password == admin_password:
+            st.success("Giriş başarılı!")
+            # Retrieve data from database
+            conn = sqlite3.connect(DATABASE)
+            df = pd.read_sql_query("SELECT year_debt, company_scale, debt_amount, market_served FROM responses", conn)
+            conn.close()
+            
+            st.write("Kayıtlı cevaplar:")
             st.dataframe(df)
+            
             # Create Excel in memory
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df.to_excel(writer, index=False, sheet_name="Responses")
             output.seek(0)
+            
             st.download_button(
-                label="Excel dosyasını indir",
+                label="Excel Dosyasını İndir",
                 data=output,
                 file_name="poll_responses.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.error("Giriş başarısız, lütfen tekrar deneyin.")
+            st.error("Geçersiz kullanıcı adı veya parola.")
 
-# Otherwise => Survey or Thank You
+# -------------------------------
+# Main Navigation
+# -------------------------------
+st.sidebar.title("Navigasyon")
+page = st.sidebar.radio("Seçiniz", ("Anket", "Sonuçları İndir"))
+
+if page == "Anket":
+    survey_page()
 else:
-    # Only save once per session
-    if "submitted" not in st.session_state:
-        st.session_state.submitted = False
-
-    # If the user just submitted all 4 answers
-    year_debt_list = params_dict.get("year_debt", [])
-    company_scale_list = params_dict.get("company_scale", [])
-    debt_amount_list = params_dict.get("debt_amount", [])
-    market_served_list = params_dict.get("market_served", [])
-
-    # All answers present, not saved yet => show "Teşekkürler" 
-    if (
-        not st.session_state.submitted
-        and len(year_debt_list) > 0
-        and len(company_scale_list) > 0
-        and len(debt_amount_list) > 0
-        and len(market_served_list) > 0
-    ):
-        year_debt = year_debt_list[0]
-        company_scale = company_scale_list[0]
-        debt_amount = debt_amount_list[0]
-        market_served = market_served_list[0]
-
-        save_response(year_debt, company_scale, debt_amount, market_served)
-        st.session_state.submitted = True
-
-        # Show your original "Teşekkürler" HTML
-        components.html(THANKS_TEMPLATE, height=600, scrolling=False)
-        st.markdown("[Ankete tekrar katılmak için tıklayın](./)")
-
-    else:
-        # If any parameter is missing, or user hasn't submitted => show the multi-step form
-        components.html(HTML_TEMPLATE, height=900, scrolling=True)
-        # Optional admin link
-        st.markdown("[Download Results (Admin)](?page=download)")
+    download_page()
