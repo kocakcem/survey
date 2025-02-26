@@ -4,7 +4,7 @@ import sqlite3
 import pandas as pd
 from io import BytesIO
 
-# === Database setup ===
+# --- Database setup ---
 DATABASE = "survey.db"
 
 def init_db():
@@ -38,33 +38,7 @@ def load_responses():
     conn.close()
     return df
 
-# === Original "Teşekkürler" page from your Flask code ===
-THANKS_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Teşekkürler</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-  <style>
-    body { background-color: #f8f9fa; }
-  </style>
-</head>
-<body>
-  <div class="container mt-5">
-    <div class="card text-center shadow-sm">
-      <div class="card-body">
-        <h2 class="card-title text-success">Teşekkürler!</h2>
-        <p class="card-text">Cevabınız kaydedildi.</p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-"""
-
-# === Your multi-step HTML form (minimal edits for Streamlit) ===
+# --- Your original HTML template, minimal change in handleSubmit() only ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -164,7 +138,7 @@ HTML_TEMPLATE = """
       updateProgress();
     }
 
-    // Build the redirect URL from the current page, appending answers as query params
+    // The only changed part: build the new URL from the current one (minus any old query params)
     function handleSubmit(e) {
       e.preventDefault();
       var year_debt = document.getElementById("year_debt_input").value;
@@ -172,14 +146,13 @@ HTML_TEMPLATE = """
       var debt_amount = document.getElementById("debt_amount_input").value;
       var market_served = document.getElementById("select_market_served").value;
 
-      // Remove any existing query string from the current URL:
       var baseUrl = window.location.href.split('?')[0];
-      // Build the new URL with query parameters:
       var url = baseUrl
         + "?year_debt=" + encodeURIComponent(year_debt)
         + "&company_scale=" + encodeURIComponent(company_scale)
         + "&debt_amount=" + encodeURIComponent(debt_amount)
         + "&market_served=" + encodeURIComponent(market_served);
+
       window.location.href = url;
     }
   </script>
@@ -289,13 +262,11 @@ HTML_TEMPLATE = """
 </html>
 """
 
-#
-# =============== Streamlit Main App Logic ===============
-#
+# ------------- Streamlit App -------------
 
-params_dict = st.query_params  # Replaces st.experimental_get_query_params()
+params_dict = st.query_params  # Official replacement for st.experimental_get_query_params()
 
-# If there's a ?page=download in the URL, show admin page
+# If ?page=download => Admin panel
 if "page" in params_dict and "download" in params_dict["page"]:
     st.title("Download Survey Results")
     st.write("Bu sayfa yalnızca yetkili kullanıcılar içindir.")
@@ -306,7 +277,6 @@ if "page" in params_dict and "download" in params_dict["page"]:
             df = load_responses()
             st.subheader("Kayıtlı Yanıtlar")
             st.dataframe(df)
-            # Create Excel in memory
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df.to_excel(writer, index=False, sheet_name="Responses")
@@ -320,43 +290,46 @@ if "page" in params_dict and "download" in params_dict["page"]:
         else:
             st.error("Giriş başarısız, lütfen tekrar deneyin.")
 
-# Otherwise, it's the main survey page
+# Otherwise => Survey page
 else:
-    # We don’t want to save multiple times, so track if we’ve saved once
+    # If we haven't shown "Teşekkürler" yet:
     if "submitted" not in st.session_state:
         st.session_state.submitted = False
 
-    # Gather parameters from the URL
+    # Pull each param list
     year_debt_list = params_dict.get("year_debt", [])
     company_scale_list = params_dict.get("company_scale", [])
     debt_amount_list = params_dict.get("debt_amount", [])
     market_served_list = params_dict.get("market_served", [])
 
-    # If all parameters are present and we haven't saved yet, save & show "Teşekkürler"
-    if (not st.session_state.submitted
+    # If all answers exist in the query string & we haven't saved them yet:
+    if (
+        not st.session_state.submitted
         and len(year_debt_list) > 0
         and len(company_scale_list) > 0
         and len(debt_amount_list) > 0
-        and len(market_served_list) > 0):
-        
-        # They are lists, so take the first item
+        and len(market_served_list) > 0
+    ):
         year_debt = year_debt_list[0]
         company_scale = company_scale_list[0]
         debt_amount = debt_amount_list[0]
         market_served = market_served_list[0]
 
-        # Save to SQLite
+        # Save
         save_response(year_debt, company_scale, debt_amount, market_served)
         st.session_state.submitted = True
 
-        # Show your original "Teşekkürler" page as an embedded HTML
-        components.html(THANKS_TEMPLATE, height=600, scrolling=False)
-
-        # Offer a link to reload the page without query params
-        st.markdown("[Ankete tekrar katılmak için tıklayın](./)")
+        # Show big "Teşekkürler!" and hide the form
+        st.success("Teşekkürler! Cevabınız kaydedildi.")
+        st.markdown("""
+        <p style='font-size:18px'>
+          Yanıtlarınız bizim için çok değerli. Ankete tekrar katılmak veya yeni bir yanıt girmek isterseniz 
+          <a href='./'>buraya tıklayın</a>.
+        </p>
+        """, unsafe_allow_html=True)
 
     else:
-        # If user hasn't just submitted, show the original multi-step survey form
-        components.html(HTML_TEMPLATE, height=900, scrolling=True)
-        # Optional link for admin
+        # If no submission yet or incomplete parameters => show the full HTML form
+        components.html(HTML_TEMPLATE, height=800, scrolling=True)
         st.markdown("[Download Results (Admin)](?page=download)")
+
