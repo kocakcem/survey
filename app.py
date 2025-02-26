@@ -4,28 +4,28 @@ import pandas as pd
 from io import BytesIO
 import streamlit as st
 
-# -------------------------------------------------------------------
-# CSS Hack to Hide the Dummy Placeholder Item in selectbox/radio
-# -------------------------------------------------------------------
-# We will insert a hidden first item "-----" that Streamlit sees as index=0,
-# but the user won't see it in the dropdown/radio list. This ensures no default
-# is visibly selected, yet we can have an internal "no choice" state.
+###############################################################################
+# CSS Hack to hide the dummy "None" item from the dropdown/radio list
+# This approach uses nth-child selectors to hide the first item in each list.
+# Because we place None at index=0, that item is never visible to the user.
+###############################################################################
 st.markdown("""
 <style>
-/* Hide the first item in any selectbox dropdown */
-[data-baseweb="select"] li[data-option-index="0"] {
+/* Hide the first (index=0) item in any selectbox dropdown */
+[data-baseweb="select"] li:nth-child(1) {
     display: none !important;
 }
-/* Hide the first item in any radio group */
-[data-baseweb="radio"] label[data-index="0"] {
+
+/* Hide the first (index=0) radio option */
+[data-baseweb="radio"] div[role="radio"]:nth-child(1) {
     display: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------------------------
+###############################################################################
 # Database Setup
-# -------------------------------------------------------------------
+###############################################################################
 DATABASE = "survey.db"
 
 def init_db():
@@ -45,57 +45,63 @@ def init_db():
 
 init_db()
 
-# -------------------------------------------------------------------
-# Session State Defaults
-# -------------------------------------------------------------------
+###############################################################################
+# Session State Initialization
+###############################################################################
 if "step" not in st.session_state:
-    st.session_state.step = 0  # Steps: 0..3, then 4 => "thank you"
+    st.session_state.step = 0  # steps: 0..3, then 4 => "thank you"
 
-# Each answer starts as the dummy placeholder "-----" (meaning "no choice yet").
+# Q1: year_debt => store as "" if unselected
 if "year_debt" not in st.session_state:
     st.session_state.year_debt = ""
-if "company_scale" not in st.session_state:
-    st.session_state.company_scale = "-----"
-if "debt_amount" not in st.session_state:
-    st.session_state.debt_amount = "-----"
-if "market_served" not in st.session_state:
-    st.session_state.market_served = "-----"
 
-# -------------------------------------------------------------------
-# Helper: Save Response to DB
-# -------------------------------------------------------------------
+# Q2: company_scale => store None if unselected
+if "company_scale" not in st.session_state:
+    st.session_state.company_scale = None
+
+# Q3: debt_amount => store None if unselected
+if "debt_amount" not in st.session_state:
+    st.session_state.debt_amount = None
+
+# Q4: market_served => store None if unselected
+if "market_served" not in st.session_state:
+    st.session_state.market_served = None
+
+###############################################################################
+# Helper: Save to DB
+###############################################################################
 def save_response():
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
-    c.execute(
-        "INSERT INTO responses (year_debt, company_scale, debt_amount, market_served) VALUES (?, ?, ?, ?)",
-        (
-            st.session_state.year_debt,
-            st.session_state.company_scale,
-            st.session_state.debt_amount,
-            st.session_state.market_served
-        )
-    )
+    c.execute("""
+        INSERT INTO responses (year_debt, company_scale, debt_amount, market_served)
+        VALUES (?, ?, ?, ?)
+    """, (
+        st.session_state.year_debt,
+        st.session_state.company_scale,
+        st.session_state.debt_amount,
+        st.session_state.market_served
+    ))
     conn.commit()
     conn.close()
 
-# -------------------------------------------------------------------
-# The Survey
-# -------------------------------------------------------------------
+###############################################################################
+# Survey Flow
+###############################################################################
 def survey_page():
     st.title("Şirket Borç Durumu Anketi")
 
-    # Progress bar: step=0..4 => 0%, 25%, 50%, 75%, 100%
+    # Progress bar: step=0..4 => 0%,25%,50%,75%,100%
     progress_val = int((st.session_state.step / 4) * 100)
     st.progress(progress_val)
     st.write(f"{progress_val}% tamamlandı")
 
-    # -------------------- STEP 0: Year Debt (6 Buttons) --------------------
+    # ========================= STEP 0 =========================
     if st.session_state.step == 0:
         st.subheader("A. Firmanızın en çok borçlandığı yıl hangisidir?")
         st.write("Aşağıdaki seçeneklerden birine tıklayın:")
 
-        # 6 possible buttons in two rows of 3
+        # 6 buttons for the year
         year_options = [
             "2000 ve öncesi",
             "2001-2005 arası",
@@ -104,7 +110,6 @@ def survey_page():
             "2016-2020 arası",
             "2020-2024 arası"
         ]
-
         row1 = st.columns(3)
         for i, opt in enumerate(year_options[:3]):
             if row1[i].button(opt, key=f"year_btn_{i}"):
@@ -115,58 +120,60 @@ def survey_page():
             if row2[i-3].button(opt, key=f"year_btn_{i}"):
                 st.session_state.year_debt = opt
 
-        # Show user’s choice
+        # Show chosen
         if st.session_state.year_debt:
             st.success(f"Seçtiğiniz: {st.session_state.year_debt}")
         else:
             st.info("Henüz bir yıl seçmediniz.")
 
-        # "Devam" is disabled if no year chosen
+        # Devam is disabled if no year chosen
         if st.button("Devam", disabled=(st.session_state.year_debt == ""), key="step0_next"):
             st.session_state.step = 1
 
-    # -------------------- STEP 1: Company Scale (Selectbox) --------------------
+    # ========================= STEP 1 =========================
     elif st.session_state.step == 1:
         st.subheader("B. Firmanızın borçlu olduğu işletme en çok hangi ölçektedir?")
 
-        scale_options = [
-            "-----",  # dummy placeholder (hidden by CSS)
+        # We'll have a selectbox with the first item = None (hidden).
+        # The rest are real choices.
+        scale_choices = [
+            None,  # hidden by CSS, represents "no selection"
             "Mikro ölçekli işletme (1-9 çalışan)",
             "Küçük ölçekli işletme (10-49 çalışan)",
             "Orta ölçekli işletme (50-250 çalışan)",
             "Büyük ölçekli işletme (250 üzeri çalışan)"
         ]
 
-        # Figure out the correct index in scale_options
-        if st.session_state.company_scale in scale_options:
-            current_index = scale_options.index(st.session_state.company_scale)
+        # Figure out which index to display
+        if st.session_state.company_scale in scale_choices:
+            current_index = scale_choices.index(st.session_state.company_scale)
         else:
-            # If user somehow cleared it, go back to 0
-            current_index = 0
+            current_index = 0  # no selection
 
-        selection = st.selectbox(
+        selected = st.selectbox(
             "Seçiniz",
-            scale_options,
+            scale_choices,
             index=current_index,
-            key="company_scale_selectbox"
+            key="company_scale_selectbox",
+            format_func=lambda x: x if x else ""  # Show blank for None
         )
 
-        st.session_state.company_scale = selection
+        st.session_state.company_scale = selected
 
         col_back, col_next = st.columns(2)
         if col_back.button("Geri", key="step1_back"):
             st.session_state.step = 0
 
-        # If the user is still on "-----", no valid choice => disable Devam
-        if col_next.button("Devam", disabled=(st.session_state.company_scale == "-----"), key="step1_next"):
+        # Devam disabled if user hasn't picked a real choice
+        if col_next.button("Devam", disabled=(st.session_state.company_scale is None), key="step1_next"):
             st.session_state.step = 2
 
-    # -------------------- STEP 2: Debt Amount (Radio) --------------------
+    # ========================= STEP 2 =========================
     elif st.session_state.step == 2:
         st.subheader("C. Firmanızın borç oranı nedir?")
 
-        debt_options = [
-            "-----",  # hidden by CSS
+        debt_choices = [
+            None,  # hidden by CSS
             "0-1 milyon TL",
             "1-5 milyon TL",
             "5-10 milyon TL",
@@ -175,33 +182,33 @@ def survey_page():
             "Belirtmek istemiyorum"
         ]
 
-        if st.session_state.debt_amount in debt_options:
-            current_index = debt_options.index(st.session_state.debt_amount)
+        if st.session_state.debt_amount in debt_choices:
+            current_index = debt_choices.index(st.session_state.debt_amount)
         else:
             current_index = 0
 
         chosen = st.radio(
             "Seçiniz",
-            debt_options,
+            debt_choices,
             index=current_index,
-            key="debt_amount_radio"
+            key="debt_amount_radio",
+            format_func=lambda x: x if x else ""  # blank for None
         )
-
         st.session_state.debt_amount = chosen
 
         col_back, col_next = st.columns(2)
         if col_back.button("Geri", key="step2_back"):
             st.session_state.step = 1
 
-        if col_next.button("Devam", disabled=(st.session_state.debt_amount == "-----"), key="step2_next"):
+        if col_next.button("Devam", disabled=(st.session_state.debt_amount is None), key="step2_next"):
             st.session_state.step = 3
 
-    # -------------------- STEP 3: Market Served (Selectbox) --------------------
+    # ========================= STEP 3 =========================
     elif st.session_state.step == 3:
         st.subheader("D. Firmanız ağırlıklı olarak hangi pazarlara hizmet veriyor?")
 
-        market_options = [
-            "-----",  # hidden by CSS
+        market_choices = [
+            None,  # hidden by CSS
             "Sadece yurtiçi pazara hizmet veriyorum",
             "Ağırlıklı olarak yurtiçi pazara, kısmen yurtdışı pazara hizmet veriyorum",
             "Hem yurtiçi hem yurtdışı pazarlara eşit oranda hizmet veriyorum",
@@ -209,29 +216,29 @@ def survey_page():
             "Sadece yurtdışı pazara hizmet veriyorum"
         ]
 
-        if st.session_state.market_served in market_options:
-            current_index = market_options.index(st.session_state.market_served)
+        if st.session_state.market_served in market_choices:
+            current_index = market_choices.index(st.session_state.market_served)
         else:
             current_index = 0
 
         selection = st.selectbox(
             "Seçiniz",
-            market_options,
+            market_choices,
             index=current_index,
-            key="market_served_selectbox"
+            key="market_served_selectbox",
+            format_func=lambda x: x if x else ""  # blank for None
         )
-
         st.session_state.market_served = selection
 
         col_back, col_submit = st.columns(2)
         if col_back.button("Geri", key="step3_back"):
             st.session_state.step = 2
 
-        if col_submit.button("Gönder", disabled=(st.session_state.market_served == "-----"), key="submit_btn"):
+        if col_submit.button("Gönder", disabled=(st.session_state.market_served is None), key="submit_btn"):
             save_response()
             st.session_state.step = 4
 
-    # -------------------- STEP 4: Thank You --------------------
+    # ========================= STEP 4: Thank You =========================
     elif st.session_state.step == 4:
         st.markdown(
             """
@@ -245,13 +252,13 @@ def survey_page():
         if st.button("Yeni Anket Doldurmak İçin Başla", key="restart"):
             st.session_state.step = 0
             st.session_state.year_debt = ""
-            st.session_state.company_scale = "-----"
-            st.session_state.debt_amount = "-----"
-            st.session_state.market_served = "-----"
+            st.session_state.company_scale = None
+            st.session_state.debt_amount = None
+            st.session_state.market_served = None
 
-# -------------------------------------------------------------------
+###############################################################################
 # Download Page
-# -------------------------------------------------------------------
+###############################################################################
 def download_page():
     st.title("Anket Sonuçlarını İndir")
     st.write("Lütfen yetkilendirme bilgilerinizi giriniz.")
@@ -287,9 +294,9 @@ def download_page():
         else:
             st.error("Geçersiz kullanıcı adı veya parola.")
 
-# -------------------------------------------------------------------
+###############################################################################
 # Main App
-# -------------------------------------------------------------------
+###############################################################################
 st.sidebar.title("Navigasyon")
 page = st.sidebar.radio("Seçiniz", ("Anket", "Sonuçları İndir"))
 
