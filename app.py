@@ -4,7 +4,7 @@ import sqlite3
 import pandas as pd
 from io import BytesIO
 
-# --- Database setup ---
+# === Database setup ===
 DATABASE = "survey.db"
 
 def init_db():
@@ -38,7 +38,33 @@ def load_responses():
     conn.close()
     return df
 
-# --- HTML Template (only change is the handleSubmit function) ---
+# === Original "Teşekkürler" page from your Flask code ===
+THANKS_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teşekkürler</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <style>
+    body { background-color: #f8f9fa; }
+  </style>
+</head>
+<body>
+  <div class="container mt-5">
+    <div class="card text-center shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title text-success">Teşekkürler!</h2>
+        <p class="card-text">Cevabınız kaydedildi.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+# === Your multi-step HTML form (minimal edits for Streamlit) ===
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="tr">
@@ -138,7 +164,7 @@ HTML_TEMPLATE = """
       updateProgress();
     }
 
-    // Only change: we now build the redirect URL from window.location.href
+    // Build the redirect URL from the current page, appending answers as query params
     function handleSubmit(e) {
       e.preventDefault();
       var year_debt = document.getElementById("year_debt_input").value;
@@ -263,10 +289,11 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# --- Streamlit app logic ---
+#
+# =============== Streamlit Main App Logic ===============
+#
 
-# Remove the old st.experimental_get_query_params usage:
-params_dict = st.query_params  # returns a dict of param -> list of strings
+params_dict = st.query_params  # Replaces st.experimental_get_query_params()
 
 # If there's a ?page=download in the URL, show admin page
 if "page" in params_dict and "download" in params_dict["page"]:
@@ -279,6 +306,7 @@ if "page" in params_dict and "download" in params_dict["page"]:
             df = load_responses()
             st.subheader("Kayıtlı Yanıtlar")
             st.dataframe(df)
+            # Create Excel in memory
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df.to_excel(writer, index=False, sheet_name="Responses")
@@ -294,17 +322,17 @@ if "page" in params_dict and "download" in params_dict["page"]:
 
 # Otherwise, it's the main survey page
 else:
-    # So we don't re-save on every page load:
+    # We don’t want to save multiple times, so track if we’ve saved once
     if "submitted" not in st.session_state:
         st.session_state.submitted = False
 
-    # Extract each param (which is a list of strings). If missing, get an empty list.
+    # Gather parameters from the URL
     year_debt_list = params_dict.get("year_debt", [])
     company_scale_list = params_dict.get("company_scale", [])
     debt_amount_list = params_dict.get("debt_amount", [])
     market_served_list = params_dict.get("market_served", [])
 
-    # If all parameters are present and we haven't already submitted:
+    # If all parameters are present and we haven't saved yet, save & show "Teşekkürler"
     if (not st.session_state.submitted
         and len(year_debt_list) > 0
         and len(company_scale_list) > 0
@@ -317,13 +345,18 @@ else:
         debt_amount = debt_amount_list[0]
         market_served = market_served_list[0]
 
+        # Save to SQLite
         save_response(year_debt, company_scale, debt_amount, market_served)
         st.session_state.submitted = True
-        st.success("Teşekkürler! Cevabınız kaydedildi.")
+
+        # Show your original "Teşekkürler" page as an embedded HTML
+        components.html(THANKS_TEMPLATE, height=600, scrolling=False)
+
+        # Offer a link to reload the page without query params
         st.markdown("[Ankete tekrar katılmak için tıklayın](./)")
 
     else:
-        # Show your custom HTML form
-        components.html(HTML_TEMPLATE, height=800, scrolling=True)
+        # If user hasn't just submitted, show the original multi-step survey form
+        components.html(HTML_TEMPLATE, height=900, scrolling=True)
         # Optional link for admin
         st.markdown("[Download Results (Admin)](?page=download)")
